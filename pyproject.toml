@@ -1,0 +1,19 @@
+[project]
+name = "ton-code"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "click>=8.5.0",
+    "httpx>=0.28.1",
+    "pydantic>=2.13.5",
+    "pydantic-ai>=2.43.0",
+    "python-dotenv>=1.2.3",
+    "rich>=15.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.16.7",
+]

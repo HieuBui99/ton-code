@@ -1,2 +1,2 @@
 # ton-code
-TonAI Coding Agent
+TonAI Coding Agent. Powered by Pydantic-AI
