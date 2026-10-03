@@ -38,9 +38,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 
-    # --- Inference: one of three providers behind LLM_PROVIDER (ADR-0005). ---
-    # openai compatible endpoints
-    llm_provider: Literal["openai", "gemini"] = "geminini"
+    llm_provider: Literal["openai", "gemini"] = "openai"
 
     model_endpoint_url: str = ""
     model_endpoint_model: str = "GLM-5.3-Flash"
@@ -69,12 +67,7 @@ class Settings(BaseSettings):
 
     # ``compaction_enabled`` gates ONLY the automatic cascade; manual ``/compact`` ignores it.
     compaction_enabled: bool = True
-    # The active model's MAX *input* window, in tokens — the single source of truth (pydantic-ai
-    # exposes no model window, so this number is the contract). DERIVED from the active provider's
-    # model id via :data:`MODEL_CONTEXT_WINDOWS` unless explicitly set; the declared default below is
-    # cosmetic, :meth:`_derive_compaction_context_window` supplies the real one. A wrong value here is
-    # not cosmetic: too LARGE and both compaction tiers fire above the endpoint's hard ceiling, so the
-    # request is truncated or rejected before compaction ever runs.
+
     compaction_context_window_tokens: int = Field(1_048_576, gt=0)
     # A tier fires when input_tokens >= window * (1 - reserve). INVARIANT: micro reserves more than
     # full so it fires first — ``microcompaction_reserve_fraction > compaction_reserve_fraction``.
