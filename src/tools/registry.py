@@ -7,9 +7,10 @@ from dataclasses import dataclass
 from pydantic_ai import Agent, DeferredToolRequests
 
 from src.agent.deps import AgentDeps
-from src.tools import ToolKind, files
 from src.tools import bash as bash_module
+from src.tools import files
 from src.tools import web as web_module
+from src.tools.kinds import ToolKind
 
 logger = logging.getLogger(__name__)
 
@@ -32,14 +33,15 @@ TOOL_SPECS: list[ToolSpec] = [
     ToolSpec(name=files.WRITE_TOOL_NAME, func=files.write, kind=ToolKind.FILE_EDIT),
     ToolSpec(name=files.EDIT_TOOL_NAME, func=files.edit, kind=ToolKind.FILE_EDIT),
     # Bash: shell execution behind the executor seam → OTHER (edit mode still asks).
-    ToolSpec(name=bash_module.BASH_TOOL_NAME, func=bash_module.bash, kind=ToolKind.OTHER),
-
+    ToolSpec(
+        name=bash_module.BASH_TOOL_NAME, func=bash_module.bash, kind=ToolKind.OTHER
+    ),
     # Web: httpx GET → Markdown; network egress only, no local side effect → READ_ONLY.
     ToolSpec(
         name=web_module.WEB_FETCH_TOOL_NAME,
         func=web_module.web_fetch,
         kind=ToolKind.READ_ONLY,
-    )
+    ),
 ]
 
 # Each tool's kind, derived from TOOL_SPECS; unknown tools default to OTHER (mutating → gated).
@@ -52,4 +54,6 @@ def register_tools(agent: Agent[AgentDeps, str | DeferredToolRequests]) -> None:
     """
     for spec in TOOL_SPECS:
         agent.tool(spec.func, retries=spec.retries)
-    logger.debug("registered %d tools: %s", len(TOOL_SPECS), [s.name for s in TOOL_SPECS])
+    logger.debug(
+        "registered %d tools: %s", len(TOOL_SPECS), [s.name for s in TOOL_SPECS]
+    )

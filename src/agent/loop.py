@@ -312,6 +312,9 @@ class AgentTurnHandler:
         self._last_input_tokens = estimate_history_tokens(self.message_history)
         self._persisted_count = len(self.message_history)
         self._deps.emit(
+            events.ContextUsage(input_tokens=self._last_input_tokens, estimated=True)
+        )
+        self._deps.emit(
             events.ContextCompacted(
                 before_tokens=before_tokens, kept_messages=len(tail)
             )
@@ -334,6 +337,7 @@ class AgentTurnHandler:
         self._persisted_count = 0
         self._last_input_tokens = 0
         self._announced_tool_calls.clear()
+        self._deps.emit(events.ContextUsage(input_tokens=0))
 
     def _microcompact(self) -> int:
         """
@@ -376,6 +380,13 @@ class AgentTurnHandler:
                 self.message_history = run.all_messages()
 
                 self._last_input_tokens = _leg_input_tokens(self.message_history)
+                self._deps.emit(
+                    events.ContextUsage(
+                        input_tokens=self._last_input_tokens
+                        or estimate_history_tokens(self.message_history),
+                        estimated=self._last_input_tokens == 0,
+                    )
+                )
         # pydantic-ai may coalesce adjacent same-role prior messages (notably the two ModelRequests
         # a full compaction leaves), shrinking the persisted prefix. Clamp the cursor to the count
         # preceding this leg's new messages so the next persist never drops a fresh message.
@@ -402,6 +413,10 @@ class AgentTurnHandler:
         async with node.stream(run.ctx) as request_stream:  # type: ignore[attr-defined]
             async for event in request_stream:
                 self._emit_for_stream_event(ctx, event)
+            usage = request_stream.response.usage
+            if usage.input_tokens > 0:
+                self._last_input_tokens = usage.input_tokens + usage.cache_read_tokens
+                ctx.emit(events.ContextUsage(input_tokens=self._last_input_tokens))
 
     async def _stream_tool_node(
         self, ctx: TurnContext, node: object, run: object

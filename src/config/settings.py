@@ -19,6 +19,13 @@ MODEL_CONTEXT_WINDOWS: tuple[tuple[str, int], ...] = (
 UNKNOWN_MODEL_CONTEXT_WINDOW = 200_000
 
 
+def env_files(env_file: Path | None = None) -> tuple[Path, ...]:
+    """An explicit file replaces automatic discovery; later files override earlier ones."""
+    if env_file is not None:
+        return (env_file.expanduser().resolve(),)
+    return (Path.home() / ".config/ton-code/.env", Path.cwd() / ".env")
+
+
 def context_window_for(model_id: str) -> int | None:
     """The known input window for ``model_id``, or ``None`` when no table row matches.
 
@@ -27,7 +34,7 @@ def context_window_for(model_id: str) -> int | None:
     """
     lowered = model_id.lower()
     for pattern, window in MODEL_CONTEXT_WINDOWS:
-        if pattern in lowered:
+        if pattern.lower() in lowered:
             return window
     return None
 
@@ -36,7 +43,6 @@ class Settings(BaseSettings):
     """Runtime configuration. Defaults are safe for tests, not production."""
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
-
 
     llm_provider: Literal["openai", "gemini"] = "openai"
 
@@ -56,7 +62,6 @@ class Settings(BaseSettings):
     max_output_lines: int = 2000
     max_output_bytes: int = 50_000
     web_fetch_timeout_s: float = 30.0
-
 
     # ``sleep(seconds)`` is capped to this value (never rejected) so a model cannot stall a turn.
     sleep_max_s: float = 60.0
@@ -91,7 +96,6 @@ class Settings(BaseSettings):
 
     skills_dir: Path = Path(".agents/skills")
 
-
     def active_model(self) -> str:
         """The model id for the active provider, or the override if set."""
         provider = self.llm_provider
@@ -105,23 +109,33 @@ class Settings(BaseSettings):
     def context_window_is_assumed(self) -> bool:
         return (
             "compaction_context_window_tokens" not in self.model_fields_set
-            and context_window_for(self.active_model) is None
+            and context_window_for(self.active_model()) is None
         )
 
     @model_validator(mode="after")
     def _derive_compaction_context_window(self) -> Settings:
         if "compaction_context_window_tokens" in self.model_fields_set:
             return self
-        known = context_window_for(self.active_model)
+        known = context_window_for(self.active_model())
         window = known if known is not None else UNKNOWN_MODEL_CONTEXT_WINDOW
         if known is None:
             logger.debug(
                 "no known context window for model %r; assuming %d tokens",
-                self.active_model,
+                self.active_model(),
                 window,
             )
         object.__setattr__(self, "compaction_context_window_tokens", window)
         return self
 
 
-settings = Settings()
+# CLI loads dotenv configuration before constructing any agents. Keep this shared
+# object so modules importing settings see the same validated runtime configuration.
+settings = Settings(_env_file=None)
+
+
+def load_settings(env_file: Path | None = None) -> Settings:
+    configured = Settings(_env_file=env_files(env_file))
+    for name in Settings.model_fields:
+        setattr(settings, name, getattr(configured, name))
+    settings.__pydantic_fields_set__ = configured.model_fields_set.copy()
+    return settings

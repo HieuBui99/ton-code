@@ -28,8 +28,7 @@ class ExecResult:
 
 
 class CommandExecutor(Protocol):
-    async def run(self, command: str, *, cwd: Path, timeout_s: float) -> ExecResult:
-        ...
+    async def run(self, command: str, *, cwd: Path, timeout_s: float) -> ExecResult: ...
 
 
 class LocalExecutor:
@@ -58,17 +57,33 @@ class LocalExecutor:
             start_new_session=True,  # own process group: kill it as a unit, children included
         )
         comm = asyncio.ensure_future(process.communicate())
-        done, _ = await asyncio.wait({comm}, timeout=timeout_s)
-        if not done:
-            logger.debug("command timed out after %.3fs, killing process group", timeout_s)
-            stdout, stderr = await self._terminate(process, comm)
-            return ExecResult(
-                stdout=_decode(stdout),
-                stderr=_decode(stderr),
-                exit_code=process.returncode if process.returncode is not None else -signal.SIGKILL,
-                timed_out=True,
-            )
-        stdout, stderr = await comm
+        try:
+            done, _ = await asyncio.wait({comm}, timeout=timeout_s)
+            if not done:
+                logger.debug(
+                    "command timed out after %.3fs, killing process group", timeout_s
+                )
+                stdout, stderr = await self._terminate(process, comm)
+                return ExecResult(
+                    stdout=_decode(stdout),
+                    stderr=_decode(stderr),
+                    exit_code=process.returncode
+                    if process.returncode is not None
+                    else -signal.SIGKILL,
+                    timed_out=True,
+                )
+            stdout, stderr = await asyncio.shield(comm)
+        except asyncio.CancelledError:
+            # The runner cancels only once; shielding also keeps repeated cancellation
+            # from abandoning subprocess cleanup during interpreter shutdown.
+            cleanup = asyncio.create_task(self._terminate(process, comm))
+            while not cleanup.done():
+                try:
+                    await asyncio.shield(cleanup)
+                except asyncio.CancelledError:
+                    continue
+            cleanup.result()
+            raise
         return ExecResult(
             stdout=_decode(stdout),
             stderr=_decode(stderr),
@@ -102,12 +117,12 @@ def _signal_group(process: asyncio.subprocess.Process, sig: signal.Signals) -> N
     every descendant in one call; :class:`ProcessLookupError` / :class:`PermissionError` are
     swallowed — nothing left to kill.
     """
-    if process.returncode is not None:
-        return
     try:
         os.killpg(process.pid, sig)
-    except (ProcessLookupError, PermissionError):
-        logger.debug("process group %d already gone when sending %s", process.pid, sig.name)
+    except ProcessLookupError, PermissionError:
+        logger.debug(
+            "process group %d already gone when sending %s", process.pid, sig.name
+        )
 
 
 def _decode(raw: bytes) -> str:

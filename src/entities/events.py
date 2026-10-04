@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Literal
 
 
@@ -49,6 +49,13 @@ class ToolResult:
 
 
 @dataclass(frozen=True, slots=True)
+class ContextUsage:
+    input_tokens: int
+    estimated: bool = False
+    kind: Literal["context_usage"] = "context_usage"
+
+
+@dataclass(frozen=True, slots=True)
 class ContextCompacted:
     before_tokens: int
     kept_messages: int
@@ -75,6 +82,7 @@ Event = (
     | ThinkingDelta
     | ToolCallStarted
     | ToolResult
+    | ContextUsage
     | ContextCompacted
     | ContextMicrocompacted
     | AgentError

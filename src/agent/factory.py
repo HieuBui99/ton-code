@@ -26,7 +26,9 @@ _BASE_INSTRUCTIONS = (
 )
 
 
-def build_agent(*, model: str | None = None) -> Agent[AgentDeps, str | DeferredToolRequests]:
+def build_agent(
+    *, model: str | None = None
+) -> Agent[AgentDeps, str | DeferredToolRequests]:
     """
     Construct the agent on the configured LLM Provider + register the tools
     """
@@ -51,7 +53,8 @@ def _build_model(*, model: str | None = None) -> Model:
             provider=GoogleProvider(api_key=_provider_api_key("gemini")),
         )
     elif provider == "openai":
-        base_url = f"{settings.model_endpoint_url}/v1"
+        endpoint = settings.model_endpoint_url.rstrip("/")
+        base_url = endpoint if endpoint.endswith("/v1") else f"{endpoint}/v1"
         api_key = _provider_api_key("openai")
         if api_key:
             client = AsyncOpenAI(
@@ -67,15 +70,18 @@ def _build_model(*, model: str | None = None) -> Model:
     raise ValueError(f"unsupported llm_provider: {provider!r}")
 
 
-def _provider_api_key(provider: Literal["gemini", "openrouter"]) -> str:
-    secret = settings.gemini_api_key if provider == "gemini" else settings.model_endpoint_api_key
+def _provider_api_key(provider: Literal["gemini", "openai"]) -> str:
+    secret = (
+        settings.gemini_api_key
+        if provider == "gemini"
+        else settings.model_endpoint_api_key
+    )
     return secret.get_secret_value()
 
 
 def _register_instructions(agent: Agent[AgentDeps, str | DeferredToolRequests]) -> None:
     @agent.instructions
     def assemble_instructions(ctx: RunContext[AgentDeps]) -> str:
-        harness_home = ctx.deps.harness_home or ctx.deps.cwd
         parts = (
             _BASE_INSTRUCTIONS,
             # Add memory, skills, ...
